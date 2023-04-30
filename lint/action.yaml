@@ -1,0 +1,25 @@
+name: Python Lint
+description: GitHub Action that lints a Python based repository
+inputs:
+  checkout-repo:
+    required: false
+    description: Perform checkout as first step of action
+    default: "true"
+  extra-args:
+    required: false
+    description: Extra args for pre-commit
+    default: ""
+  github-token:
+    required: true
+    description: GitHub token that can checkout the repository. e.g. 'secrets.GITHUB_TOKEN'
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      if: inputs.checkout-repo == 'true'
+      with:
+        fetch-depth: 0
+    - uses: pre-commit/action@v3.0.0
