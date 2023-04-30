@@ -1,0 +1,66 @@
+name: Python Test
+description: GitHub Action that tests a python based repository
+inputs:
+  github-token:
+    required: true
+    description: GitHub token that can checkout the repository. e.g. 'secrets.GITHUB_TOKEN'
+    default: ${{ github.token }}
+  python-version:
+    required: false
+    description: Python version to install on the github runner.
+    default: ""
+  test-flags:
+    required: false
+    description: Flags and args for test command
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    # If we do have a poetry.lock, we use a poetry based workflow
+    - name: Install poetry
+      if: hashFiles('poetry.lock') != ''
+      shell: bash
+      run: pipx install poetry
+    - name: Setup python
+      # this will use by default the .python-version of your repo
+      if: hashFiles('poetry.lock') != ''
+      uses: actions/setup-python@v4
+      with:
+        cache: "poetry"
+        python-version: ${{ inputs.python-version }}
+    - name: Setup python
+      # this will use by default the .python-version of your repo
+      if: hashFiles('poetry.lock') == ''
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Install pip dependencies
+      if: hashFiles('poetry.lock') == ''
+      shell: bash
+      run: |
+        # Install the current package as editable
+        pip install -e .
+        # Install the extras="dev" setup.py dependencies
+        pip install -e ".[dev]" || true
+        # Install the extras="test" setup.py dependencies
+        pip install -e ".[test]" || true
+    - name: Run pip tests
+      if: hashFiles('poetry.lock') == ''
+      shell: bash
+      run: pytest ${{ inputs.test-flags }}
+    - name: Install poetry dependencies
+      if: hashFiles('poetry.lock') != ''
+      shell: bash
+      run: |
+        poetry install --extras dev || echo "No dev extras"
+        poetry install --with dev || echo "No dev dependency group"
+        poetry install --extras test || echo "No test extras"
+        poetry install --with test || echo "No test dependency group"
+    - name: Run poetry tests
+      if: hashFiles('poetry.lock') != ''
+      shell: bash
+      run: poetry run pytest ${{ inputs.test-flags }}
