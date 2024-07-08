@@ -5,8 +5,29 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run pre-commit
+        uses: ./pre-commit
+      - name: commitlint
+        uses: ./commitlint
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run tests
+        run: echo "Running tests"
+
   release:
     name: Release
+    needs: [lint, test]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
