@@ -1,0 +1,111 @@
+name: "Semantic Release Action"
+description: "Runs semantic release on the repository, either in dry-run mode for pull requests or in normal mode for push events"
+inputs:
+  node-version:
+    description: "Node.js version to use"
+    required: false
+    default: "20"
+  github-token:
+    description: "GitHub token"
+    required: true
+outputs:
+  new-release-published:
+    description: "Whether a new release was published"
+    value: ${{ steps.release.outputs.new-release-published }}
+  new-release-version:
+    description: "The new release version"
+    value: ${{ steps.release.outputs.new-release-version }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Log Event Info
+      shell: bash
+      run: |
+        echo "Event Name: ${{ github.event_name }}"
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          echo "PR Branch: ${{ github.event.pull_request.head.ref }}"
+        else
+          echo "Push Branch: ${{ github.ref }}"
+        fi
+
+    - name: Release
+      id: release
+      shell: bash
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          echo "Running semantic-release in dry-run mode for PR"
+          GITHUB_REF=${{ github.event.pull_request.head.ref }} npx semantic-release --dry-run --no-ci --branches ${{ github.event.pull_request.head.ref }} > output.log
+        else
+          echo "Running semantic-release for push"
+          npx semantic-release > output.log
+        fi
+
+        echo "Output from semantic-release:"
+        cat output.log
+
+        new_release_version=$(grep -oP 'next release version is \K[^\s]+' output.log || echo "N/A")
+        new_release_published=$(grep -q 'Published release' output.log && echo "true" || echo "false")
+
+        echo "New release published: $new_release_published"
+        echo "New release version: $new_release_version"
+
+        echo "new-release-published=$new_release_published" >> $GITHUB_ENV
+        echo "new-release-version=$new_release_version" >> $GITHUB_ENV
+
+        echo "new-release-published=$new_release_published" >> $GITHUB_OUTPUT
+        echo "new-release-version=$new_release_version" >> $GITHUB_OUTPUT
+
+        echo "### Release Summary" >> $GITHUB_STEP_SUMMARY
+        echo "Version: $new-release-version" >> $GITHUB_STEP_SUMMARY
+        echo "Published: $new-release-published" >> $GITHUB_STEP_SUMMARY
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+
+    - name: Comment on Pull Request
+      if: ${{ github.event_name == 'pull_request' }}
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const { data: comments } = await github.rest.issues.listComments({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+          });
+
+          const body = `
+          ### :rocket: Pre-release Version
+          **Version:** \`${{ steps.release.outputs.new-release-version }}\`
+
+          If you merge the current PR, the new version will be released.
+          `;
+
+          const comment = comments.find(comment => comment.user.login === 'github-actions[bot]' && comment.body.includes('Pre-release Version'));
+
+          if (comment) {
+            await github.rest.issues.updateComment({
+              comment_id: comment.id,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+          }
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
